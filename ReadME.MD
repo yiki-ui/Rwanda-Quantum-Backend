@@ -372,15 +372,15 @@ This platform builds on cutting-edge research in:
 **NISR 2025 Hackathon Submission**
 
 For collaboration, investment, or research inquiries:
-- Email: [your-email]
-- GitHub: [your-github]
+- Email: prodyiki@gmail.com
+- GitHub: https://github.com/yiki-ui/
 - Platform Demo: [demo-url]
 
 ---
 
 ## 📜 License
 
-[Specify your license - suggest MIT or Apache 2.0 for open innovation]
+[ Apache 2.0 for open innovation]
 
 ---
 
