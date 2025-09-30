@@ -11,7 +11,7 @@ import pandas as pd
 from datetime import datetime, date
 import json
 
-# Import your existing quantum simulation core
+# Import quantum simulation core
 from simulation_core import (
     run_molecule_simulation,
     parse_molecule_string,
@@ -29,7 +29,7 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# FIXED CORS - Allow React app on port 3000
+# CORS 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -37,14 +37,14 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "*"  # For development/hackathon - remove in production
+        "*"  #for test and development do not laugh at me please
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Enhanced Data Models with Quantum Integration ---
+# --- Data Models with Quantum Integration ---
 
 class LocationData(BaseModel):
     latitude: float = Field(..., ge=-2.5, le=-1.0)
@@ -114,7 +114,7 @@ class MolecularDockingAnalysisRequest(BaseModel):
     target_site: str = Field(..., description="pest_receptor, nutrient_carrier, plant_membrane")
     analysis_type: str = Field("binding_affinity", description="binding_affinity, toxicity_assessment, absorption_rate")
 
-# --- Quantum-Enhanced Agricultural Functions ---
+# --- Quantum Agricultural Functions ---
 
 def design_molecular_pesticide(request: MolecularPesticideRequest) -> Dict[str, Any]:
     """Uses quantum molecular simulation to design targeted, environmentally safe pesticides"""

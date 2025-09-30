@@ -1,5 +1,5 @@
-# Enhanced simulation_core.py for NISR 2025 Big Data Hackathon
-# Quantum Agricultural Intelligence Platform - Winning Enhancements
+# simulation_core.py for NISR 2025 Big Data Hackathon
+# Quantum Agricultural Intelligence Platform
 
 # Qiskit specific imports
 from qiskit_nature.second_q.drivers import PySCFDriver
@@ -31,7 +31,7 @@ from datetime import datetime
 import hashlib
 import logging
 
-# NEW: Enhanced Rwanda-specific agricultural data
+# Rwanda-specific agricultural data
 RWANDA_AGRICULTURAL_DATABASE = {
     "districts": {
         "northern_province": ["Burera", "Gakenke", "Gicumbi", "Musanze", "Rulindo"],
@@ -64,7 +64,7 @@ RWANDA_AGRICULTURAL_DATABASE = {
     }
 }
 
-# NEW: Performance monitoring and caching for hackathon scalability
+# Performance monitoring and caching for hackathon scalability
 class SimulationCache:
     def __init__(self):
         self.cache = {}
@@ -101,7 +101,7 @@ class SimulationCache:
 # Global cache instance
 simulation_cache = SimulationCache()
 
-# Enhanced logging for hackathon debugging
+# Enhanced logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ def parse_molecule_string(molecule_string: str) -> List[Dict[str, Any]]:
                     "x": x, 
                     "y": y, 
                     "z": z,
-                    "atom_id": len(atoms_data)  # NEW: Add atom indexing
+                    "atom_id": len(atoms_data)  # atom indexing
                 })
             except ValueError as e:
                 raise ValueError(f"Invalid coordinate in molecule string at line {line_num + 1}: {line}. Error: {e}")
@@ -572,7 +572,7 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
             "traceback": traceback.format_exc()
         }
 
-# Keep all your existing functions (find_optimized_geometry, find_transition_state, 
+ 
 # simplified_molecular_docking, predict_material_properties) but add logging
 
 def find_optimized_geometry(molecule_string: str, method: str = "hf") -> Dict[str, Any]:
