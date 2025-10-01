@@ -1,11 +1,10 @@
-# Python 3.10 
+# Python 3.11 slim image
 FROM python:3.11.9-slim-buster
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies required for pyscf and other scientific libraries
-# These are common build tools and libraries for scientific Python packages
+# Install system dependencies for PySCF & scientific stack
 RUN apt-get update && apt-get install -y \
     build-essential \
     libblas-dev \
@@ -18,17 +17,18 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the working directory
-COPY requirements.txt .
+# Upgrade pip/setuptools/wheel
+RUN pip install --upgrade pip setuptools wheel
 
-# Install any needed packages specified in requirements.txt
-# Use --no-cache-dir to reduce image size
+# Copy requirements and install
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the working directory
+# Copy app code
 COPY . .
 
-# Expose the port your FastAPI application runs on
+# Expose FastAPI port
 EXPOSE 8000
 
+# Run app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
