@@ -14,11 +14,12 @@ RUN apt-get update && apt-get install -y \
     libopenmpi-dev \
     git \
     pkg-config \
+    cmake \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip/setuptools/wheel
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy requirements and install
 COPY requirements.txt .
@@ -29,6 +30,10 @@ COPY . .
 
 # Expose FastAPI port
 EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
 
 # Run app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

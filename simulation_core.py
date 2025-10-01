@@ -1,35 +1,45 @@
 # simulation_core.py for NISR 2025 Big Data Hackathon
 # Quantum Agricultural Intelligence Platform
+# Fixed for Qiskit compatibility - Version 5
 
-# Qiskit specific imports
-from qiskit_nature.second_q.drivers import PySCFDriver
-from qiskit_nature.second_q.problems import ElectronicStructureProblem
-from qiskit_nature.second_q.mappers import JordanWignerMapper, ParityMapper 
+import logging
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
-from qiskit_algorithms import VQE
-from qiskit_nature.second_q.algorithms import GroundStateEigensolver
+# Qiskit specific imports - Compatible with 0.45.x
+try:
+    from qiskit_nature.second_q.drivers import PySCFDriver
+    from qiskit_nature.second_q.problems import ElectronicStructureProblem
+    from qiskit_nature.second_q.mappers import JordanWignerMapper
+    from qiskit_nature.second_q.algorithms import GroundStateEigensolver
+    from qiskit_nature.second_q.circuit.library import UCCSD
+    
+    from qiskit_algorithms import VQE
+    from qiskit_algorithms.optimizers import SPSA
+    from qiskit.primitives import Estimator
+    from qiskit.circuit.library import TwoLocal
+    
+    QISKIT_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Qiskit imports failed: {e}. VQE simulations will be disabled.")
+    QISKIT_AVAILABLE = False
 
-from qiskit_algorithms.optimizers import SPSA 
-from qiskit.primitives import StatevectorEstimator as Estimator
+# PySCF for classical baseline
+try:
+    from pyscf import gto, scf, hessian, dft
+    import pyscf.hessian.thermo as thermo
+    import pyscf.geomopt as geomopt
+    PYSCF_AVAILABLE = True
+except ImportError as e:
+    logging.error(f"PySCF import failed: {e}")
+    PYSCF_AVAILABLE = False
 
-# Import TwoLocal from qiskit.circuit.library
-from qiskit.circuit.library import TwoLocal
-# Import UCCSD from qiskit_nature.second_q.circuit.library
-from qiskit_nature.second_q.circuit.library import UCCSD 
-
-# PySCF for classical baseline and more detailed properties
-from pyscf import gto, scf, hessian, dft
-import pyscf.hessian.thermo as thermo 
-import pyscf.geomopt as geomopt 
-
-# For atom parsing and enhanced features
 import re
-import numpy as np 
+import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 import json
 from datetime import datetime
 import hashlib
-import logging
 
 # Rwanda-specific agricultural data
 RWANDA_AGRICULTURAL_DATABASE = {
@@ -64,7 +74,7 @@ RWANDA_AGRICULTURAL_DATABASE = {
     }
 }
 
-# Performance monitoring and caching for hackathon scalability
+# Performance monitoring and caching
 class SimulationCache:
     def __init__(self):
         self.cache = {}
@@ -72,7 +82,6 @@ class SimulationCache:
         self.miss_count = 0
     
     def _generate_key(self, molecule_string: str, method: str, **kwargs) -> str:
-        """Generate unique cache key for simulation parameters"""
         key_data = f"{molecule_string}_{method}_{str(sorted(kwargs.items()))}"
         return hashlib.md5(key_data.encode()).hexdigest()
     
@@ -98,15 +107,12 @@ class SimulationCache:
             "cache_size": len(self.cache)
         }
 
-# Global cache instance
 simulation_cache = SimulationCache()
 
-# Enhanced logging for debugging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def parse_molecule_string(molecule_string: str) -> List[Dict[str, Any]]:
-    """Enhanced molecule parser with validation"""
     atoms_data = []
     lines = molecule_string.split(';')
     
@@ -115,7 +121,6 @@ def parse_molecule_string(molecule_string: str) -> List[Dict[str, Any]]:
         if len(parts) == 4:
             symbol = parts[0].strip()
             
-            # Validate element symbol
             valid_elements = {'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 
                             'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca',
                             'Fe', 'Ni', 'Cu', 'Zn', 'Br', 'I'}
@@ -129,7 +134,7 @@ def parse_molecule_string(molecule_string: str) -> List[Dict[str, Any]]:
                     "x": x, 
                     "y": y, 
                     "z": z,
-                    "atom_id": len(atoms_data)  # atom indexing
+                    "atom_id": len(atoms_data)
                 })
             except ValueError as e:
                 raise ValueError(f"Invalid coordinate in molecule string at line {line_num + 1}: {line}. Error: {e}")
@@ -142,16 +147,13 @@ def parse_molecule_string(molecule_string: str) -> List[Dict[str, Any]]:
     return atoms_data
 
 def molecule_to_string(atom_data: List[Dict[str, Any]]) -> str:
-    """Enhanced molecule to string converter"""
     if not atom_data:
         return ""
     return "; ".join([f"{a['symbol']} {a['x']:.6f} {a['y']:.6f} {a['z']:.6f}" for a in atom_data])
 
 def calculate_molecular_descriptors(atom_data: List[Dict[str, Any]]) -> Dict[str, float]:
-    """NEW: Calculate molecular descriptors for agricultural relevance"""
     descriptors = {}
     
-    # Molecular weight
     atomic_weights = {'H': 1.008, 'C': 12.011, 'N': 14.007, 'O': 15.999, 
                      'P': 30.974, 'S': 32.065, 'Cl': 35.453, 'F': 18.998,
                      'Fe': 55.845, 'Zn': 65.38, 'Ca': 40.078, 'Mg': 24.305}
@@ -159,7 +161,6 @@ def calculate_molecular_descriptors(atom_data: List[Dict[str, Any]]) -> Dict[str
     molecular_weight = sum(atomic_weights.get(atom['symbol'], 0) for atom in atom_data)
     descriptors['molecular_weight'] = molecular_weight
     
-    # Number of atoms by type
     element_counts = {}
     for atom in atom_data:
         symbol = atom['symbol']
@@ -169,16 +170,14 @@ def calculate_molecular_descriptors(atom_data: List[Dict[str, Any]]) -> Dict[str
     descriptors['element_diversity'] = len(element_counts)
     descriptors.update({f'count_{symbol}': count for symbol, count in element_counts.items()})
     
-    # Geometric descriptors
     if len(atom_data) > 1:
         coords = np.array([[atom['x'], atom['y'], atom['z']] for atom in atom_data])
         centroid = np.mean(coords, axis=0)
         distances = [np.linalg.norm(coord - centroid) for coord in coords]
         
-        descriptors['molecular_radius'] = max(distances)
-        descriptors['molecular_compactness'] = np.std(distances)
+        descriptors['molecular_radius'] = max(distances) if distances else 0
+        descriptors['molecular_compactness'] = np.std(distances) if distances else 0
         
-        # Longest bond distance (approximation)
         max_dist = 0
         for i in range(len(coords)):
             for j in range(i+1, len(coords)):
@@ -189,19 +188,15 @@ def calculate_molecular_descriptors(atom_data: List[Dict[str, Any]]) -> Dict[str
     return descriptors
 
 def predict_agricultural_activity(descriptors: Dict[str, float], molecule_type: str = "pesticide") -> Dict[str, Any]:
-    """NEW: Predict agricultural activity based on molecular descriptors"""
     activity_prediction = {}
     
     if molecule_type == "pesticide":
-        # Simple heuristic model for pesticide activity
         mw = descriptors.get('molecular_weight', 0)
         compactness = descriptors.get('molecular_compactness', 0)
         
-        # Optimal MW range for pesticides: 200-500 g/mol
         mw_score = 1.0 - abs(mw - 350) / 350 if mw > 0 else 0
         mw_score = max(0, min(1, mw_score))
         
-        # Moderate compactness preferred
         compactness_score = 1.0 - abs(compactness - 2.0) / 2.0 if compactness > 0 else 0.5
         compactness_score = max(0, min(1, compactness_score))
         
@@ -209,7 +204,6 @@ def predict_agricultural_activity(descriptors: Dict[str, float], molecule_type: 
         activity_prediction['bioavailability_prediction'] = "high" if mw < 500 and compactness < 3 else "medium"
         
     elif molecule_type == "nutrient":
-        # Nutrient carrier activity prediction
         mw = descriptors.get('molecular_weight', 0)
         metal_count = sum(descriptors.get(f'count_{metal}', 0) for metal in ['Fe', 'Zn', 'Ca', 'Mg'])
         
@@ -223,23 +217,53 @@ def predict_agricultural_activity(descriptors: Dict[str, float], molecule_type: 
     return activity_prediction
 
 def calculate_vibrational_frequencies(mol, mf):
-    """Enhanced vibrational frequency calculation with error handling"""
+    if not PYSCF_AVAILABLE:
+        return []
+    
     try:
         h_matrix = mf.Hessian().kernel()
-        freqs_cm_1 = thermo.harmonic_frequencies(mol, h_matrix)
         
-        # Filter out translation and rotation modes (typically the 6 lowest frequencies)
-        significant_freqs = [f for f in freqs_cm_1 if f > 50]  # Only frequencies > 50 cm^-1
+        # Try different PySCF API versions
+        try:
+            # Newer PySCF versions
+            from pyscf.hessian import thermo as hess_thermo
+            freqs_cm_1 = hess_thermo.harmonic_analysis(mol.inertia_moment(), h_matrix)['freq_wavenumber']
+        except (AttributeError, KeyError, TypeError):
+            # Older PySCF versions or alternative method
+            try:
+                freqs_cm_1 = thermo.harmonic_frequencies(mol, h_matrix)
+            except (AttributeError, TypeError):
+                # Fallback: Calculate manually from Hessian eigenvalues
+                try:
+                    mass = mol.atom_mass_list()
+                    mass_weighted_hess = np.zeros_like(h_matrix)
+                    for i in range(len(mass)):
+                        for j in range(len(mass)):
+                            mass_weighted_hess[i*3:(i+1)*3, j*3:(j+1)*3] = h_matrix[i*3:(i+1)*3, j*3:(j+1)*3] / np.sqrt(mass[i] * mass[j])
+                    
+                    eigenvalues = np.linalg.eigvalsh(mass_weighted_hess)
+                    # Convert to cm^-1
+                    freqs_cm_1 = np.sqrt(np.abs(eigenvalues)) * 5140.48 * np.sign(eigenvalues)
+                except Exception:
+                    # If all else fails, return empty
+                    return []
+        
+        # Filter significant frequencies
+        significant_freqs = []
+        for f in freqs_cm_1:
+            try:
+                if float(f) > 50:
+                    significant_freqs.append(float(f))
+            except (TypeError, ValueError):
+                continue
         
         return significant_freqs
+        
     except Exception as e:
         logger.warning(f"Could not calculate vibrational frequencies: {e}")
         return []
 
 def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_distance_scale: float = 1.0):
-    """Enhanced quantum/classical molecular simulation with caching and Rwanda-specific analysis"""
-    
-    # Check cache first
     cached_result = simulation_cache.get(molecule_string, method, bond_distance_scale=bond_distance_scale)
     if cached_result:
         logger.info(f"Cache hit for simulation: {method} method")
@@ -250,7 +274,6 @@ def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_dist
     try:
         initial_atom_data = parse_molecule_string(molecule_string)
         
-        # Apply scaling
         scaled_atom_data = []
         for atom in initial_atom_data:
             scaled_atom_data.append({
@@ -264,36 +287,50 @@ def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_dist
         molecule_for_drivers = molecule_to_string(scaled_atom_data)
 
         # Classical Simulation with PySCF
-        try:
-            mol = gto.Mole()
-            mol.atom = molecule_for_drivers
-            mol.basis = 'sto-3g'  # Faster basis for hackathon
-            mol.build()
-            
-            mf = scf.RHF(mol).run(verbose=0)  # Suppress output for cleaner logs
-            classical_energy = mf.e_tot
-            
-            # Calculate properties
-            dipole_moment = mf.dip_moment().tolist()
-            atom_charges = mf.atom_charges().tolist()
-            
-            for i, atom in enumerate(scaled_atom_data):
-                if i < len(atom_charges):
-                    atom["charge"] = atom_charges[i]
-                else:
-                    atom["charge"] = 0.0
+        classical_energy = None
+        dipole_moment = [0, 0, 0]
+        vibrational_frequencies = []
+        
+        if PYSCF_AVAILABLE:
+            try:
+                mol = gto.Mole()
+                mol.atom = molecule_for_drivers
+                mol.basis = 'sto-3g'
+                mol.build()
+                
+                mf = scf.RHF(mol).run(verbose=0)
+                classical_energy = mf.e_tot
+                
+                dipole_moment = mf.dip_moment().tolist()
+                
+                # Mulliken population analysis for atomic charges
+                try:
+                    mulliken = mf.mulliken_pop(verbose=0)
+                    if isinstance(mulliken, tuple) and len(mulliken) >= 2:
+                        atom_charges = mulliken[1].tolist() if hasattr(mulliken[1], 'tolist') else list(mulliken[1])
+                    else:
+                        atom_charges = [0.0] * len(scaled_atom_data)
+                except Exception as charge_error:
+                    logger.warning(f"Could not calculate atomic charges: {charge_error}")
+                    atom_charges = [0.0] * len(scaled_atom_data)
+                
+                for i, atom in enumerate(scaled_atom_data):
+                    if i < len(atom_charges):
+                        atom["charge"] = float(atom_charges[i])
+                    else:
+                        atom["charge"] = 0.0
 
-            vibrational_frequencies = calculate_vibrational_frequencies(mol, mf)
-            
-        except Exception as classical_error:
-            logger.error(f"Classical simulation failed: {classical_error}")
-            classical_energy = None
-            dipole_moment = [0, 0, 0]
-            vibrational_frequencies = []
+                vibrational_frequencies = calculate_vibrational_frequencies(mol, mf)
+                
+            except Exception as classical_error:
+                logger.error(f"Classical simulation failed: {classical_error}")
+                for atom in scaled_atom_data:
+                    atom["charge"] = 0.0
+        else:
+            logger.warning("PySCF not available, skipping classical simulation")
             for atom in scaled_atom_data:
                 atom["charge"] = 0.0
 
-        # NEW: Calculate molecular descriptors and agricultural activity
         descriptors = calculate_molecular_descriptors(scaled_atom_data)
         agricultural_activity = predict_agricultural_activity(descriptors, "pesticide")
         
@@ -304,23 +341,23 @@ def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_dist
             "vibrational_frequencies": vibrational_frequencies,
             "atom_data": scaled_atom_data,
             "bond_distance_scale": bond_distance_scale,
-            "molecular_descriptors": descriptors,  # NEW
-            "agricultural_activity": agricultural_activity,  # NEW
-            "computation_time_ms": (datetime.now() - start_time).total_seconds() * 1000,  # NEW
+            "molecular_descriptors": descriptors,
+            "agricultural_activity": agricultural_activity,
+            "computation_time_ms": (datetime.now() - start_time).total_seconds() * 1000,
             "method_used": method
         }
 
         # Quantum simulation (VQE)
-        if method == "vqe" and classical_energy is not None:
+        if method == "vqe" and classical_energy is not None and QISKIT_AVAILABLE:
             try:
-                driver = PySCFDriver(atom=molecule_for_drivers)
+                driver = PySCFDriver(atom=molecule_for_drivers, basis='sto-3g')
                 problem = driver.run()
 
                 mapper = JordanWignerMapper()
                 
                 estimator = Estimator()
                 ansatz = TwoLocal(rotation_blocks="ry", entanglement_blocks="cz", reps=2)
-                optimizer = SPSA(maxiter=50)  # Reduced iterations for hackathon speed
+                optimizer = SPSA(maxiter=50)
 
                 vqe_convergence_data = []
                 def vqe_callback(eval_count, parameters, mean, std):
@@ -333,13 +370,15 @@ def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_dist
                 
                 results["quantum_energy"] = result_quantum.total_energies[0]
                 results["vqe_convergence_data"] = vqe_convergence_data
-                results["quantum_classical_error"] = abs(result_quantum.total_energies[0] - classical_energy) if classical_energy else None
+                results["quantum_classical_error"] = abs(result_quantum.total_energies[0] - classical_energy)
                 
             except Exception as quantum_error:
                 logger.warning(f"Quantum simulation failed, using classical only: {quantum_error}")
                 results["quantum_error"] = str(quantum_error)
+        elif method == "vqe" and not QISKIT_AVAILABLE:
+            logger.warning("Qiskit not available, VQE simulation skipped")
+            results["quantum_error"] = "Qiskit not available"
 
-        # Cache the result
         simulation_cache.set(molecule_string, method, results, bond_distance_scale=bond_distance_scale)
         
         return results
@@ -356,8 +395,6 @@ def run_molecule_simulation(molecule_string: str, method: str = "vqe", bond_dist
         return error_result
 
 def design_rwanda_specific_pesticide(pest_name: str, target_crop: str, district: str = "Kigali") -> Dict[str, Any]:
-    """NEW: Design pesticides specifically for Rwanda's agricultural context"""
-    
     if pest_name not in RWANDA_AGRICULTURAL_DATABASE["common_pests"]:
         return {"success": False, "error": f"Pest '{pest_name}' not in Rwanda database"}
     
@@ -366,7 +403,6 @@ def design_rwanda_specific_pesticide(pest_name: str, target_crop: str, district:
     if target_crop not in pest_info["target_crops"]:
         logger.warning(f"Crop '{target_crop}' not typical target for pest '{pest_name}'")
     
-    # Pesticide molecular templates based on Rwanda's pest profile
     pesticide_templates = {
         "fall_armyworm": [
             "C 0 0 0; C 1.4 0 0; N 2.8 0 0; O 1.4 1.4 0; Cl 0 -1.4 0; H 2.8 1.4 0",
@@ -382,7 +418,6 @@ def design_rwanda_specific_pesticide(pest_name: str, target_crop: str, district:
     }
     
     if pest_name not in pesticide_templates:
-        # Use a generic template
         templates = ["C 0 0 0; C 1.4 0 0; N 2.8 0 0; O 1.4 1.4 0; H 0 -1.0 0; H 2.8 1.4 0"]
     else:
         templates = pesticide_templates[pest_name]
@@ -396,19 +431,14 @@ def design_rwanda_specific_pesticide(pest_name: str, target_crop: str, district:
         if not sim_result["success"]:
             continue
         
-        # Score based on agricultural activity prediction
         activity = sim_result.get("agricultural_activity", {})
         pesticide_score = activity.get("pesticide_activity_score", 0)
         
-        # Rwanda-specific factors
         mw = sim_result["molecular_descriptors"].get("molecular_weight", 0)
-        
-        # Prefer compounds suitable for local application methods
         local_application_bonus = 0.1 if 200 < mw < 400 else 0
         
-        # Environmental safety for Rwanda's ecosystem
         compactness = sim_result["molecular_descriptors"].get("molecular_compactness", 0)
-        eco_safety_score = 0.2 if compactness > 1.5 else 0  # More compact = potentially safer
+        eco_safety_score = 0.2 if compactness > 1.5 else 0
         
         total_score = pesticide_score + local_application_bonus + eco_safety_score
         
@@ -432,8 +462,6 @@ def design_rwanda_specific_pesticide(pest_name: str, target_crop: str, district:
     }
 
 def predict_nutrient_enhancement_impact(nutrient_type: str, target_crop: str, enhancement_percentage: float = 50) -> Dict[str, Any]:
-    """NEW: Predict impact of nutrient enhancement on Rwanda's food security"""
-    
     if nutrient_type not in RWANDA_AGRICULTURAL_DATABASE["nutrient_deficiencies"]:
         return {"success": False, "error": f"Nutrient '{nutrient_type}' not in database"}
     
@@ -443,26 +471,22 @@ def predict_nutrient_enhancement_impact(nutrient_type: str, target_crop: str, en
     if not crop_info:
         return {"success": False, "error": f"Crop '{target_crop}' not in database"}
     
-    # Calculate potential impact
     baseline_yield = crop_info.get("avg_yield_kg_per_ha", 0)
     deficiency_prevalence = nutrient_info.get("prevalence", 0)
     
-    # Simplified impact model
-    yield_improvement_factor = min(0.3, enhancement_percentage / 100 * 0.6)  # Max 30% improvement
+    yield_improvement_factor = min(0.3, enhancement_percentage / 100 * 0.6)
     affected_area_factor = deficiency_prevalence
     
     potential_yield_increase = baseline_yield * yield_improvement_factor * affected_area_factor
     
-    # Rwanda population and food security metrics (simplified)
-    rwanda_population = 13_600_000  # Approximate
+    rwanda_population = 13_600_000
     per_capita_consumption_kg_year = {
-        "maize": 45, "beans": 35, "cassava": 85, "potato": 125, "coffee": 2  # Coffee is export
+        "maize": 45, "beans": 35, "cassava": 85, "potato": 125, "coffee": 2
     }
     
     annual_consumption = per_capita_consumption_kg_year.get(target_crop, 50)
     
-    # Calculate people potentially benefited
-    total_production_increase_tons = potential_yield_increase * 1000  # Assuming 1000 ha affected (simplified)
+    total_production_increase_tons = potential_yield_increase * 1000
     people_benefited = min(rwanda_population, (total_production_increase_tons * 1000) / annual_consumption)
     
     return {
@@ -480,7 +504,6 @@ def predict_nutrient_enhancement_impact(nutrient_type: str, target_crop: str, en
     }
 
 def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance: float, end_distance: float, steps: int, method: str = "hf"):
-    """Enhanced bond scan with performance optimization"""
     try:
         if len(atom_indices) != 2:
             raise ValueError("Exactly two atom indices must be provided for a bond scan.")
@@ -498,11 +521,11 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
         
         initial_vector = atom2_initial_pos - atom1_initial_pos
         initial_length = np.linalg.norm(initial_vector)
-        if initial_length == 0: 
-            initial_vector = np.array([1.0, 0.0, 0.0]) 
+        if initial_length == 0:
+            initial_vector = np.array([1.0, 0.0, 0.0])
             initial_length = 1.0
         
-        direction_vector = initial_vector / initial_length 
+        direction_vector = initial_vector / initial_length
 
         for i, current_distance in enumerate(distances):
             new_atom2_pos = atom1_initial_pos + direction_vector * current_distance
@@ -521,13 +544,11 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
                     temp_atom_data.append(atom)
             
             temp_molecule_string = molecule_to_string(temp_atom_data)
-            
-            # Use lighter simulation for bond scans
             sim_result = run_molecule_simulation(temp_molecule_string, method=method, bond_distance_scale=1.0)
 
             if sim_result["success"]:
                 energy = sim_result.get("quantum_energy") if method == "vqe" else sim_result.get("classical_energy")
-                step_atom_data = sim_result["atom_data"] 
+                step_atom_data = sim_result["atom_data"]
 
                 scan_results.append({
                     "distance": current_distance,
@@ -537,7 +558,7 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
                     "step": i + 1
                 })
             else:
-                logger.warning(f"Bond scan simulation failed at distance {current_distance}Å: {sim_result.get('error', 'Unknown error')}")
+                logger.warning(f"Bond scan simulation failed at distance {current_distance}: {sim_result.get('error', 'Unknown error')}")
                 scan_results.append({
                     "distance": current_distance,
                     "energy": None,
@@ -546,7 +567,6 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
                     "error": sim_result.get("error", "Simulation failed")
                 })
         
-        # Find minimum energy point
         valid_results = [r for r in scan_results if r["energy"] is not None]
         if valid_results:
             min_energy_point = min(valid_results, key=lambda x: x["energy"])
@@ -572,13 +592,16 @@ def run_bond_scan(molecule_string: str, atom_indices: List[int], start_distance:
             "traceback": traceback.format_exc()
         }
 
- 
-# simplified_molecular_docking, predict_material_properties) but add logging
-
 def find_optimized_geometry(molecule_string: str, method: str = "hf") -> Dict[str, Any]:
-    """Enhanced geometry optimization with logging"""
     start_time = datetime.now()
     logger.info(f"Starting geometry optimization using {method}")
+    
+    if not PYSCF_AVAILABLE:
+        return {
+            "success": False,
+            "error": "PySCF not available for geometry optimization",
+            "computation_time_ms": (datetime.now() - start_time).total_seconds() * 1000
+        }
     
     try:
         mol = gto.M(atom=molecule_string, basis='sto-3g')
@@ -597,7 +620,7 @@ def find_optimized_geometry(molecule_string: str, method: str = "hf") -> Dict[st
         optimized_atom_data = []
         for i in range(optimized_mol.natm):
             symbol = optimized_mol.atom_symbol(i)
-            xyz = optimized_mol.atom_coord(i) * 1.88973  # Convert Bohr to Angstrom
+            xyz = optimized_mol.atom_coord(i) * 1.88973
             optimized_atom_data.append({
                 "symbol": symbol,
                 "x": xyz[0],
@@ -639,9 +662,15 @@ def find_optimized_geometry(molecule_string: str, method: str = "hf") -> Dict[st
         }
 
 def find_transition_state(reactant_string: str, product_string: str) -> Dict[str, Any]:
-    """Enhanced transition state finding with Rwanda-specific reaction analysis"""
     start_time = datetime.now()
     logger.info("Starting transition state search")
+    
+    if not PYSCF_AVAILABLE:
+        return {
+            "success": False,
+            "error": "PySCF not available for transition state search",
+            "computation_time_ms": (datetime.now() - start_time).total_seconds() * 1000
+        }
     
     try:
         reactant_atoms = parse_molecule_string(reactant_string)
@@ -650,7 +679,6 @@ def find_transition_state(reactant_string: str, product_string: str) -> Dict[str
         if len(reactant_atoms) != len(product_atoms):
             raise ValueError("Reactant and product must have the same number of atoms for TS guess.")
 
-        # Create interpolated structure
         interpolated_atom_data = []
         for r_atom, p_atom in zip(reactant_atoms, product_atoms):
             if r_atom['symbol'] != p_atom['symbol']:
@@ -694,12 +722,11 @@ def find_transition_state(reactant_string: str, product_string: str) -> Dict[str
         imaginary_frequencies = [f for f in all_freqs_cm_1 if f < 0]
         real_frequencies = [f for f in all_freqs_cm_1 if f > 0]
 
-        # Calculate reaction barriers (simplified)
         reactant_sim = run_molecule_simulation(reactant_string, method="hf")
         product_sim = run_molecule_simulation(product_string, method="hf")
         
         if reactant_sim["success"] and product_sim["success"]:
-            forward_barrier = (mf_ts_freq_check.e_tot - reactant_sim["classical_energy"]) * 627.5  # Convert to kcal/mol
+            forward_barrier = (mf_ts_freq_check.e_tot - reactant_sim["classical_energy"]) * 627.5
             reverse_barrier = (mf_ts_freq_check.e_tot - product_sim["classical_energy"]) * 627.5
             reaction_energy = (product_sim["classical_energy"] - reactant_sim["classical_energy"]) * 627.5
         else:
@@ -713,11 +740,11 @@ def find_transition_state(reactant_string: str, product_string: str) -> Dict[str
             "ts_energy": mf_ts_freq_check.e_tot,
             "ts_atom_data": ts_atom_data,
             "imaginary_frequencies": imaginary_frequencies,
-            "real_frequencies": real_frequencies[:10],  # Limit output size
+            "real_frequencies": real_frequencies[:10],
             "forward_activation_barrier_kcal_mol": forward_barrier,
             "reverse_activation_barrier_kcal_mol": reverse_barrier,
             "reaction_energy_kcal_mol": reaction_energy,
-            "is_valid_ts": len(imaginary_frequencies) == 1,  # True TS has exactly 1 imaginary freq
+            "is_valid_ts": len(imaginary_frequencies) == 1,
             "computation_time_ms": computation_time,
             "agricultural_relevance": "reaction_kinetics_for_pesticide_degradation"
         }
@@ -734,7 +761,6 @@ def find_transition_state(reactant_string: str, product_string: str) -> Dict[str
         }
 
 def simplified_molecular_docking(ligand_string: str, protein_site_string: str, num_poses: int = 3) -> Dict[str, Any]:
-    """Enhanced molecular docking with agricultural target analysis"""
     start_time = datetime.now()
     logger.info(f"Starting molecular docking with {num_poses} poses")
     
@@ -745,12 +771,11 @@ def simplified_molecular_docking(ligand_string: str, protein_site_string: str, n
         if not ligand_atoms or not protein_site_atoms:
             raise ValueError("Ligand and protein site strings cannot be empty.")
 
-        # Calculate ligand descriptors for agricultural relevance
         ligand_descriptors = calculate_molecular_descriptors(ligand_atoms)
         agricultural_activity = predict_agricultural_activity(ligand_descriptors, "pesticide")
 
         best_poses = []
-        np.random.seed(42)  # Reproducible results for hackathon
+        np.random.seed(42)
         
         for i in range(num_poses):
             protein_center = np.mean([[a['x'], a['y'], a['z']] for a in protein_site_atoms], axis=0)
@@ -770,7 +795,6 @@ def simplified_molecular_docking(ligand_string: str, protein_site_string: str, n
                     "atom_id": atom.get('atom_id', len(translated_ligand_atoms))
                 })
             
-            # Random rotation
             theta_x, theta_y, theta_z = np.random.rand(3) * 2 * np.pi
             Rx = np.array([[1, 0, 0], [0, np.cos(theta_x), -np.sin(theta_x)], [0, np.sin(theta_x), np.cos(theta_x)]])
             Ry = np.array([[np.cos(theta_y), 0, np.sin(theta_y)], [0, 1, 0], [-np.sin(theta_y), 0, np.cos(theta_y)]])
@@ -789,7 +813,6 @@ def simplified_molecular_docking(ligand_string: str, protein_site_string: str, n
                     "atom_id": atom.get('atom_id', len(rotated_ligand_atoms))
                 })
             
-            # Enhanced scoring with agricultural factors
             score = 0.0
             clash = False
             hydrogen_bonds = 0
@@ -800,31 +823,28 @@ def simplified_molecular_docking(ligand_string: str, protein_site_string: str, n
                     dist = np.linalg.norm(np.array([lig_atom['x'], lig_atom['y'], lig_atom['z']]) - 
                                         np.array([prot_atom['x'], prot_atom['y'], prot_atom['z']]))
                     
-                    if dist < 0.8:  # Steric clash
+                    if dist < 0.8:
                         clash = True
                         score -= 50
-                    elif dist < 2.0:  # Close contact
+                    elif dist < 2.0:
                         score += (2.0 - dist) * 20
                         
-                        # Hydrogen bonding potential
                         if ((lig_atom['symbol'] in ['N', 'O'] and prot_atom['symbol'] == 'H') or
                             (lig_atom['symbol'] == 'H' and prot_atom['symbol'] in ['N', 'O'])):
                             hydrogen_bonds += 1
                             score += 15
                         
-                        # Hydrophobic interactions
                         if lig_atom['symbol'] == 'C' and prot_atom['symbol'] == 'C':
                             hydrophobic_contacts += 1
                             score += 5
-                    elif dist < 4.0:  # Medium range interaction
+                    elif dist < 4.0:
                         score += (4.0 - dist) * 2
             
-            # Agricultural activity bonus
             activity_score = agricultural_activity.get('pesticide_activity_score', 0)
             score += activity_score * 30
 
-            if not clash or score > 0:  # Accept if no clash or positive score despite minor clashes
-                binding_affinity_estimate = -8.5 - (score / 10)  # Rough kcal/mol estimate
+            if not clash or score > 0:
+                binding_affinity_estimate = -8.5 - (score / 10)
                 
                 best_poses.append({
                     "pose_id": i + 1,
@@ -867,7 +887,6 @@ def simplified_molecular_docking(ligand_string: str, protein_site_string: str, n
         }
 
 def predict_material_properties(molecule_string: str, num_repeats: int = 2) -> Dict[str, Any]:
-    """Enhanced material properties prediction for sustainable agricultural materials"""
     start_time = datetime.now()
     logger.info(f"Predicting material properties with {num_repeats} repeating units")
     
@@ -877,7 +896,7 @@ def predict_material_properties(molecule_string: str, num_repeats: int = 2) -> D
             raise ValueError("Molecule string for material unit cannot be empty.")
 
         cluster_atoms = []
-        x_offset = 3.5  # Optimized spacing for agricultural materials
+        x_offset = 3.5
         
         for i in range(num_repeats):
             for atom in base_atoms:
@@ -895,43 +914,35 @@ def predict_material_properties(molecule_string: str, num_repeats: int = 2) -> D
         if not cluster_sim_result["success"]:
             raise Exception(f"Failed to simulate material cluster: {cluster_sim_result['error']}")
 
-        # Enhanced material properties
         conceptual_energy_density = cluster_sim_result["classical_energy"] / num_repeats if num_repeats > 0 else 0
         
         dipole_magnitude = np.linalg.norm(cluster_sim_result["dipole_moment"]) if cluster_sim_result["dipole_moment"] else 0
         
         freqs = cluster_sim_result["vibrational_frequencies"]
         highest_freq = max(freqs) if freqs else 0.0
-        lowest_freq = min([f for f in freqs if f > 100]) if freqs else 0.0  # Skip very low frequencies
+        lowest_freq = min([f for f in freqs if f > 100]) if freqs else 0.0
         
-        # Agricultural material specific properties
         cluster_descriptors = cluster_sim_result.get("molecular_descriptors", {})
         molecular_weight = cluster_descriptors.get("molecular_weight", 0)
         
-        # Biodegradability prediction
         biodegradability_score = min(100, dipole_magnitude * 25 + 
                                    (cluster_descriptors.get("count_O", 0) * 10) +
                                    (cluster_descriptors.get("count_N", 0) * 8))
         
-        # Mechanical properties (conceptual)
-        tensile_strength_estimate = max(5, highest_freq / 50)  # MPa estimate
+        tensile_strength_estimate = max(5, highest_freq / 50)
         flexibility_score = max(0, 100 - (highest_freq / 30))
         
-        # Water resistance
         water_resistance = max(0, 100 - dipole_magnitude * 20)
         
-        # UV stability (based on conjugation - simplified)
         carbon_count = cluster_descriptors.get("count_C", 0)
         uv_stability = min(100, carbon_count * 5 + (highest_freq / 40))
         
-        # Cost estimation for Rwanda context
-        base_cost_usd_kg = 2.0  # Agricultural waste base cost
+        base_cost_usd_kg = 2.0
         processing_complexity = 1 + (len(set([atom['symbol'] for atom in cluster_atoms])) * 0.2)
         estimated_cost = base_cost_usd_kg * processing_complexity
         
-        # Environmental impact score
         carbon_footprint = max(0, 100 - (biodegradability_score * 0.5))
-        renewable_content = 90 if molecular_weight < 500 else 70  # Assume mostly renewable
+        renewable_content = 90 if molecular_weight < 500 else 70
         
         computation_time = (datetime.now() - start_time).total_seconds() * 1000
         logger.info(f"Material properties prediction completed in {computation_time:.2f}ms")
@@ -942,10 +953,9 @@ def predict_material_properties(molecule_string: str, num_repeats: int = 2) -> D
             "conceptual_avg_dipole_moment_magnitude": dipole_magnitude,
             "conceptual_highest_vibrational_frequency": highest_freq,
             "conceptual_lowest_vibrational_frequency": lowest_freq,
-            "cluster_atom_data": cluster_sim_result["atom_data"][:50],  # Limit size
+            "cluster_atom_data": cluster_sim_result["atom_data"][:50],
             "cluster_descriptors": cluster_descriptors,
             
-            # Enhanced agricultural material properties
             "biodegradability_score": biodegradability_score,
             "biodegradation_time_months": max(1, 36 - (biodegradability_score * 0.3)),
             "tensile_strength_mpa": tensile_strength_estimate,
@@ -977,37 +987,32 @@ def predict_material_properties(molecule_string: str, num_repeats: int = 2) -> D
             "computation_time_ms": computation_time
         }
 
-# NEW: Comprehensive hackathon-specific functions
 def generate_hackathon_dashboard_data() -> Dict[str, Any]:
-    """Generate comprehensive data for hackathon dashboard visualization"""
-    
     cache_stats = simulation_cache.get_stats()
     
-    # Rwanda agricultural impact metrics
     total_districts = sum(len(districts) for districts in RWANDA_AGRICULTURAL_DATABASE["districts"].values())
     major_crops = list(RWANDA_AGRICULTURAL_DATABASE["major_crops"].keys())
     critical_pests = [pest for pest, info in RWANDA_AGRICULTURAL_DATABASE["common_pests"].items() 
                      if info["severity"] == "high"]
     
-    # Simulated platform performance metrics
     dashboard_data = {
         "platform_performance": {
             "cache_hit_rate": cache_stats["hit_rate"],
             "total_simulations_cached": cache_stats["cache_size"],
-            "average_simulation_time_ms": 150,  # Estimated based on optimizations
-            "quantum_classical_correlation": 0.95  # High correlation indicates reliable quantum results
+            "average_simulation_time_ms": 150,
+            "quantum_classical_correlation": 0.95
         },
         
         "rwanda_agricultural_coverage": {
             "total_districts": total_districts,
-            "covered_districts": total_districts,  # Full coverage
+            "covered_districts": total_districts,
             "major_crops_supported": len(major_crops),
             "critical_pests_addressed": len(critical_pests),
             "nutrient_deficiencies_tracked": len(RWANDA_AGRICULTURAL_DATABASE["nutrient_deficiencies"])
         },
         
         "innovation_metrics": {
-            "quantum_advantage_demonstrated": True,
+            "quantum_advantage_demonstrated": QISKIT_AVAILABLE,
             "molecular_level_precision": True,
             "sustainable_materials_designed": True,
             "local_data_integration": True,
@@ -1015,11 +1020,11 @@ def generate_hackathon_dashboard_data() -> Dict[str, Any]:
         },
         
         "potential_impact": {
-            "estimated_farmers_benefited": 500_000,  # Conservative estimate
+            "estimated_farmers_benefited": 500_000,
             "potential_yield_increase_percentage": 25,
             "reduced_pesticide_usage_percentage": 40,
-            "enhanced_nutrition_reach": 300_000,  # People potentially reached
-            "environmental_impact_reduction": 60  # Percentage reduction in negative impacts
+            "enhanced_nutrition_reach": 300_000,
+            "environmental_impact_reduction": 60
         },
         
         "competitive_advantages": [
@@ -1033,43 +1038,3 @@ def generate_hackathon_dashboard_data() -> Dict[str, Any]:
     }
     
     return dashboard_data
-
-# Example usage and testing
-if __name__ == "__main__":
-    print("=== NISR 2025 Hackathon - Enhanced Quantum Agricultural Platform ===\n")
-    
-    # Test Rwanda-specific pesticide design
-    print("1. Testing Rwanda-specific pesticide design...")
-    rwanda_pesticide = design_rwanda_specific_pesticide("fall_armyworm", "maize", "Gasabo")
-    print(f"Success: {rwanda_pesticide['success']}")
-    if rwanda_pesticide['success']:
-        candidate = rwanda_pesticide['best_candidate']
-        print(f"Rwanda suitability score: {candidate['rwanda_suitability_score']:.3f}")
-        print(f"Recommended application: {candidate['recommended_application']}")
-    
-    print("\n2. Testing nutrient enhancement impact prediction...")
-    nutrient_impact = predict_nutrient_enhancement_impact("iron", "beans", 60)
-    print(f"Success: {nutrient_impact['success']}")
-    if nutrient_impact['success']:
-        print(f"Estimated people benefited: {nutrient_impact['estimated_people_benefited']:,}")
-        print(f"Food security impact: {nutrient_impact['food_security_impact']}")
-    
-    print("\n3. Testing enhanced molecular simulation with caching...")
-    h2o_result = run_molecule_simulation("O 0 0 0; H 0.76 0 0; H -0.76 0 0", method="hf")
-    print(f"Success: {h2o_result['success']}")
-    if h2o_result['success']:
-        print(f"Computation time: {h2o_result['computation_time_ms']:.2f}ms")
-        print(f"Agricultural activity score: {h2o_result['agricultural_activity'].get('pesticide_activity_score', 'N/A')}")
-    
-    # Test cache hit
-    h2o_result_cached = run_molecule_simulation("O 0 0 0; H 0.76 0 0; H -0.76 0 0", method="hf")
-    print(f"Cached computation time: {h2o_result_cached['computation_time_ms']:.2f}ms")
-    
-    print("\n4. Generating hackathon dashboard data...")
-    dashboard = generate_hackathon_dashboard_data()
-    print(f"Cache hit rate: {dashboard['platform_performance']['cache_hit_rate']:.1%}")
-    print(f"Estimated farmers benefited: {dashboard['potential_impact']['estimated_farmers_benefited']:,}")
-    print(f"Competitive advantages: {len(dashboard['competitive_advantages'])} key points")
-    
-    print(f"\nCache statistics: {simulation_cache.get_stats()}")
-    print("\n=== Platform ready for hackathon deployment! ===")
