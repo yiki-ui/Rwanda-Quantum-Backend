@@ -10,7 +10,7 @@ from qiskit_algorithms import VQE
 from qiskit_nature.second_q.algorithms import GroundStateEigensolver
 
 from qiskit_algorithms.optimizers import SPSA 
-from qiskit.primitives import Estimator
+from qiskit.primitives import StatevectorEstimator as Estimator
 
 # Import TwoLocal from qiskit.circuit.library
 from qiskit.circuit.library import TwoLocal
