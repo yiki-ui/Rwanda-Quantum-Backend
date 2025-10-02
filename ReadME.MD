@@ -372,7 +372,7 @@ This platform builds on cutting-edge research in:
 **NISR 2025 Hackathon Submission**
 
 For collaboration, investment, or research inquiries:
-- Email: prodyiki@gmail.com
+- Email: prodyiki@gmail.com, nsngmvfaustin@gmail.com
 - GitHub: https://github.com/yiki-ui/
 - Platform Demo: https://github.com/yiki-ui/Rwanda-Quantum-Frontend/tree/main/demo
 
