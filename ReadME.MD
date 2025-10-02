@@ -374,7 +374,7 @@ This platform builds on cutting-edge research in:
 For collaboration, investment, or research inquiries:
 - Email: prodyiki@gmail.com
 - GitHub: https://github.com/yiki-ui/
-- Platform Demo: [demo-url]
+- Platform Demo: https://github.com/yiki-ui/Rwanda-Quantum-Frontend/tree/main/demo
 
 ---
 
